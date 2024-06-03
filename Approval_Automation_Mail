@@ -1,0 +1,144 @@
+/**
+ * Triggered when an edit is made to the sheet. This function checks if the edit is in a row greater than or equal to 4 and if the status in column E is "APPROVED".
+ */
+function onEditApproved() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var editedRange = sheet.getActiveRange();
+    var editedRow = editedRange.getRow();
+
+    if (editedRow >= 4) {
+      var status = sheet.getRange(editedRow, 5).getValue();
+      if (status === "APPROVED") {
+        processEditedRowApproved(sheet, editedRow);
+      } else {
+        Logger.log("Status is not APPROVED. Skipping processing.");
+      }
+    }
+  } catch (error) {
+    Logger.log("Error in onEditApproved: " + error.toString());
+  }
+}
+
+/**
+ * Processes an approved row by gathering necessary data from the row and calling another function to handle data display and further actions.
+ */
+function processEditedRowApproved(sheet, editedRow) {
+  try {
+    var lcName = sheet.getRange(editedRow, 10).getValue();
+    var fullName = sheet.getRange(editedRow, 3).getValue();
+    var email = sheet.getRange(editedRow, 2).getValue();
+    var alamat = sheet.getRange(editedRow, 12).getValue();
+    var phoneNumber = sheet.getRange(editedRow, 15).getValue();
+    var universitas = sheet.getRange(editedRow, 8).getValue();
+    var emailStatus = sheet.getRange(editedRow, 6).getValue();
+
+    displayDataFromSecondSheetApproved(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus);
+  } catch (error) {
+    Logger.log("Error in processEditedRowApproved: " + error.toString());
+  }
+}
+
+/**
+ * Displays data from a second sheet named "1. CX Data" where additional details related to the approved application are stored.
+ * Fetches and logs necessary data from the second sheet based on the local committee name (lcName).
+ */
+function displayDataFromSecondSheetApproved(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus) {
+  try {
+    var spreadsheetId = "1Jj9VuzUg-clAVzLo8b5-Xa0bu3QgnMsgcYzBFXyR_Rw";
+    var sheetName = "1. CX Data";
+    var invoiceSheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName);
+
+    var lcNames = invoiceSheet.getRange(4, 2, invoiceSheet.getLastRow() - 3, 1).getValues().flat();
+    var lcIndex = lcNames.indexOf(lcName);
+    if (lcIndex !== -1) {
+      var rowIndex = lcIndex + 4; // Calculate row index in the second sheet
+      var customerExperienceNames = invoiceSheet.getRange(rowIndex, 3, 2, 1).getValues().flat();
+      var contactNumbers = invoiceSheet.getRange(rowIndex, 6, 2, 1).getValues().flat();
+      var emailCustomerExperience = invoiceSheet.getRange(rowIndex, 4, 2, 1).getValues().flat();
+      var approvedGroupLink = invoiceSheet.getRange(rowIndex, 11).getValue();
+
+      sendApprovalEmail(fullName, email, lcName, customerExperienceNames, contactNumbers, approvedGroupLink, emailCustomerExperience);
+
+      var timeSent = new Date();
+      var note = "at " + Utilities.formatDate(timeSent, "GMT+7", "yyyy-MM-dd HH:mm:ss");
+      sheet.getRange(editedRow, 6).setValue("APP Mail Already Sent - " + note);
+
+      var cell = sheet.getRange(editedRow, 6);
+      cell.setBackground("#11734b");
+      cell.setFontColor("#d4edbc");
+      cell.setFontWeight("bold");
+    } else {
+      Logger.log("lcName not found in the second sheet.");
+    }
+  } catch (error) {
+    Logger.log("Error in displayDataFromSecondSheetApproved: " + error.toString());
+  }
+}
+
+/**
+ * Sends an approval email with details about next steps, including joining an official participant group.
+ * This function includes HTML styling for the email and handles CC and BCC fields.
+ */
+function sendApprovalEmail(fullName, email, lcName, customerExperienceNames, contactNumbers, approvedGroupLink, emailCustomerExperience) {
+  try {
+    var ccAddress = emailCustomerExperience.join(","); // Generate CC address list
+    var emailBody = `
+      <html>
+      <head>
+        <style>
+          body {
+            font-family: 'Lato', sans-serif;
+            font-size: 14px;
+            color: #000;
+          }
+          .greeting, .thankyou {
+            font-size: 22px;
+            font-weight: bold;
+            color: #F29702;
+          }
+          .greeting1 {
+            font-size: 16px;
+            font-weight: bold;
+            color: #F29702;
+          }
+          .signature {
+            text-align: right;
+            font-weight: bold;
+            font-style: italic;
+          }
+          .contactPerson {
+            font-size: 14px;
+            font-weight: bold;
+          }
+          .link {
+            color: #037EF3;
+            font-weight: bold;
+            text-decoration: none;
+          }
+        </style>
+      </head>
+      <body>
+        <p class="greeting">Dear ${fullName},</p>
+        <p>Your payment has been <span class="greeting1">confirmed</span>. Congratulations, you're now officially accepted as one of our <span class="greeting1">#FutureLeaders!</span></p>
+        <p>Please join the official participants group here: <a href="${approvedGroupLink}" class="link">Link Official Participants Group</a>.</p>
+        <p>If you have any questions or need further information, please contact:</p>
+        <p class="contactPerson">${customerExperienceNames.join('<br>')}: ${contactNumbers.join('<br>')}</p>
+        <p class="signature">Sincerely,<br>AFL TEAM</p>
+      </body>
+      </html>
+    `;
+
+    MailApp.sendEmail({
+      to: email,
+      subject: "Congratulations! You're Approved as AIESEC Future Leader",
+      htmlBody: emailBody,
+      cc: ccAddress,
+      bcc: "gideonmanurung03@students.usu.ac.id"  // Additional BCC
+    });
+
+    Logger.log("Approval email sent to: " + email);
+  } catch (error) {
+    Logger.log("Error in sendApprovalEmail: " + error.toString());
+  }
+}
