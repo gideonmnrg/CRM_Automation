@@ -1,0 +1,150 @@
+/*
+ * Trigger function that runs when an edit is accepted on the sheet.
+ * This function checks if the edit is in a row greater than or equal to 4 and if the status in column E is "ACCEPTED".
+ */
+function onEditAccepted() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var editedRange = sheet.getActiveRange();
+    var editedRow = editedRange.getRow();
+
+    if (editedRow >= 4) {
+      var status = sheet.getRange(editedRow, 5).getValue();
+      if (status === "ACCEPTED") {
+        processEditedRowAccepted(sheet, editedRow);
+      } else {
+        Logger.log("Status is not ACCEPTED. Skipping processing.");
+      }
+    }
+  } catch (error) {
+    Logger.log("Error in onEditAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Processes the accepted edit on the sheet by retrieving relevant data from the row and invoking a display function.
+ * This function is called if the status is "ACCEPTED".
+ */
+function processEditedRowAccepted(sheet, editedRow) {
+  try {
+    var lcName = sheet.getRange(editedRow, 10).getValue();
+    var fullName = sheet.getRange(editedRow, 3).getValue();
+    var email = sheet.getRange(editedRow, 2).getValue();
+    var alamat = sheet.getRange(editedRow, 12).getValue();
+    var phoneNumber = sheet.getRange(editedRow, 15).getValue();
+    var universitas = sheet.getRange(editedRow, 8).getValue();
+    var emailStatus = sheet.getRange(editedRow, 6).getValue();
+
+    displayDataFromSecondSheetAccepted(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus);
+  } catch (error) {
+    Logger.log("Error in processEditedRowAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Displays data from a second sheet where invoice purposes are stored.
+ * This function is responsible for fetching and logging the required data from the "4. Invoice Purposes" sheet.
+ */
+function displayDataFromSecondSheetAccepted(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus) {
+  try {
+    var spreadsheetId = "SpreadsheetID Link";
+    var sheetName = "4. Invoice Purposes";
+    var invoiceSheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName);
+
+    var lcNames = invoiceSheet.getRange(5, 3, invoiceSheet.getLastRow() - 4, 1).getValues().flat();
+    var lcIndex = lcNames.indexOf(lcName);
+    if (lcIndex !== -1) {
+      var rowIndex = lcIndex + 5; // Adjust row index based on array
+      var namaBank = invoiceSheet.getRange(rowIndex, 5).getValue();
+      var nomorRekening = invoiceSheet.getRange(rowIndex, 7).getValue();
+      var namaAkun = invoiceSheet.getRange(rowIndex, 6).getValue();
+      var price = invoiceSheet.getRange(rowIndex, 4).getValue();
+      var proofPaymentLink = invoiceSheet.getRange(rowIndex, 8).getValue();
+      var paymentGuidelineLink = "Insert Link for Payment Guideline";
+      var customerExperienceNames = invoiceSheet.getRange(rowIndex, 9).getValues();
+      var contactNumbers = invoiceSheet.getRange(rowIndex, 11).getValues();
+      var emailCustomerExperience = invoiceSheet.getRange(rowIndex, 10).getValues();
+      var invoiceTemplate = invoiceSheet.getRange(rowIndex, 14).getValues();
+
+      Logger.log("Data found for lcName: " + lcName);
+
+      sendInvoiceViaEmailAccepted(sheet, editedRow, lcName, fullName, email, alamat, phoneNumber, universitas, namaAkun, namaBank, nomorRekening, price, proofPaymentLink, paymentGuidelineLink, customerExperienceNames, contactNumbers, emailCustomerExperience, invoiceTemplate);
+      
+      var timeSent = new Date();
+      var note = "at " + Utilities.formatDate(timeSent, "GMT+7", "yyyy-MM-dd HH:mm:ss");
+      sheet.getRange(editedRow, 6).setValue("ACC Mail Already Sent - " + note);
+
+      var cell = sheet.getRange(editedRow, 6);
+      cell.setBackground("#d4edbc");
+      cell.setFontColor("#11734b");
+      cell.setFontWeight("bold");
+
+    } else {
+      Logger.log("Data not found for lcName: " + lcName);
+    }
+  } catch (error) {
+    Logger.log("Error in displayDataFromSecondSheetAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Sends the invoice via email using a Google Docs template, creating a PDF.
+ * This function manages the entire process of copying a template, replacing placeholders, creating a PDF, and sending it via email.
+ */
+function sendInvoiceViaEmailAccepted(sheet, editedRow, lcName, fullName, email, alamat, phoneNumber, universitas, namaAkun, namaBank, nomorRekening, price, proofPaymentLink, paymentGuidelineLink, customerExperienceNames, contactNumbers, emailCustomerExperience, invoiceTemplate) {
+  try {
+    var templateFileId = invoiceTemplate;
+    var destinationFolderId = 'Input ID of Google Drive';
+
+    var templateFile = DriveApp.getFileById(templateFileId);
+    var destinationFolder = DriveApp.getFolderById(destinationFolderId);
+    var lcFolder = getFolderByNameOrCreateAccepted(destinationFolder, lcName);
+
+    var currentDate = getIndonesianFormattedDate(new Date());
+    var fileName = `${lcName}_${fullName}_${currentDate}`;
+    var documentCopy = templateFile.makeCopy(fileName, lcFolder);
+    var document = DocumentApp.openById(documentCopy.getId());
+    var body = document.getBody();
+    body.replaceText('{{Nama Lengkap}}', fullName);
+    body.replaceText('{{Alamat}}', alamat);
+    body.replaceText('{{No Tlp}}', phoneNumber);
+    body.replaceText('{{Email Address}}', email);
+    body.replaceText('{{LCName}}', lcName);
+    body.replaceText('{{Universitas}}', universitas);
+    body.replaceText('{{Program}}', "AIESEC Future Leaders by " + lcName);
+    body.replaceText('{{Price}}', price);
+    body.replaceText('{{INVOICE_DATE}}', currentDate);
+
+    var dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 2);
+    var formattedDueDate = getIndonesianFormattedDate(dueDate);
+    body.replaceText('{{DUE_DATE}}', formattedDueDate);
+
+    document.saveAndClose();
+
+    var pdfBlob = DriveApp.getFileById(documentCopy.getId()).getAs('application/pdf');
+    var pdfFileName = fileName + '.pdf';
+    lcFolder.createFile(pdfBlob).setName(pdfFileName);
+
+    var ccAddress = getCCAddress(emailCustomerExperience);
+
+    sendEmailWithHTMLBodyAccepted(email, 'Congratulations, You Passed The Interview Phase!', getEmailBodyFromHTMLTemplate(fullName, lcName, customerExperienceNames, contactNumbers, proofPaymentLink, paymentGuidelineLink), [pdfBlob], ccAddress);
+
+    Logger.log("Invoice and email sent successfully!");
+  } catch (error) {
+    Logger.log("Error in sendInvoiceViaEmailAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Sends an email with an HTML body. It allows the inclusion of attachments and CC addresses.
+ */
+function sendEmailWithHTMLBodyAccepted(to, subject, htmlBody, attachments, ccAddress) {
+  MailApp.sendEmail({
+    to: to,
+    subject: subject,
+    htmlBody: htmlBody,
+    attachments: attachments,
+    cc: ccAddress,
+  });
+}
