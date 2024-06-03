@@ -1,0 +1,261 @@
+/**
+ * Trigger function that runs when an edit is accepted on the sheet.
+ * This function checks if the edit is in a row greater than or equal to 4 and if the status in column E is "ACCEPTED".
+ */
+function onEditAccepted() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var editedRange = sheet.getActiveRange();
+    var editedRow = editedRange.getRow();
+
+    if (editedRow >= 4) {
+      var status = sheet.getRange(editedRow, 5).getValue();
+      if (status === "ACCEPTED") {
+        processEditedRowAccepted(sheet, editedRow);
+      } else {
+        Logger.log("Status is not ACCEPTED. Skipping processing.");
+      }
+    }
+  } catch (error) {
+    Logger.log("Error in onEditAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Processes the accepted edit on the sheet by retrieving relevant data from the row and invoking a display function.
+ * This function is called if the status is "ACCEPTED".
+ */
+function processEditedRowAccepted(sheet, editedRow) {
+  try {
+    var lcName = sheet.getRange(editedRow, 10).getValue();
+    var fullName = sheet.getRange(editedRow, 3).getValue();
+    var email = sheet.getRange(editedRow, 2).getValue();
+    var alamat = sheet.getRange(editedRow, 12).getValue();
+    var phoneNumber = sheet.getRange(editedRow, 15).getValue();
+    var universitas = sheet.getRange(editedRow, 8).getValue();
+    var emailStatus = sheet.getRange(editedRow, 6).getValue();
+
+    displayDataFromSecondSheetAccepted(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus);
+  } catch (error) {
+    Logger.log("Error in processEditedRowAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Displays data from a second sheet where invoice purposes are stored.
+ * This function is responsible for fetching and logging the required data from the "4. Invoice Purposes" sheet.
+ */
+function displayDataFromSecondSheetAccepted(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus) {
+  try {
+    var spreadsheetId = "SpreadsheetID Link";
+    var sheetName = "4. Invoice Purposes";
+    var invoiceSheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName);
+
+    var lcNames = invoiceSheet.getRange(5, 3, invoiceSheet.getLastRow() - 4, 1).getValues().flat();
+    var lcIndex = lcNames.indexOf(lcName);
+    if (lcIndex !== -1) {
+      var rowIndex = lcIndex + 5; // Adjust row index based on array
+      var namaBank = invoiceSheet.getRange(rowIndex, 5).getValue();
+      var nomorRekening = invoiceSheet.getRange(rowIndex, 7).getValue();
+      var namaAkun = invoiceSheet.getRange(rowIndex, 6).getValue();
+      var price = invoiceSheet.getRange(rowIndex, 4).getValue();
+      var proofPaymentLink = invoiceSheet.getRange(rowIndex, 8).getValue();
+      var paymentGuidelineLink = "Insert Link for Payment Guideline";
+      var customerExperienceNames = invoiceSheet.getRange(rowIndex, 9).getValues();
+      var contactNumbers = invoiceSheet.getRange(rowIndex, 11).getValues();
+      var emailCustomerExperience = invoiceSheet.getRange(rowIndex, 10).getValues();
+      var invoiceTemplate = invoiceSheet.getRange(rowIndex, 14).getValues();
+
+      Logger.log("Data found for lcName: " + lcName);
+
+      sendInvoiceViaEmailAccepted(sheet, editedRow, lcName, fullName, email, alamat, phoneNumber, universitas, namaAkun, namaBank, nomorRekening, price, proofPaymentLink, paymentGuidelineLink, customerExperienceNames, contactNumbers, emailCustomerExperience, invoiceTemplate);
+      
+      var timeSent = new Date();
+      var note = "at " + Utilities.formatDate(timeSent, "GMT+7", "yyyy-MM-dd HH:mm:ss");
+      sheet.getRange(editedRow, 6).setValue("ACC Mail Already Sent - " + note);
+
+      var cell = sheet.getRange(editedRow, 6);
+      cell.setBackground("#d4edbc");
+      cell.setFontColor("#11734b");
+      cell.setFontWeight("bold");
+
+    } else {
+      Logger.log("Data not found for lcName: " + lcName);
+    }
+  } catch (error) {
+    Logger.log("Error in displayDataFromSecondSheetAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Sends the invoice via email using a Google Docs template, creating a PDF.
+ * This function manages the entire process of copying a template, replacing placeholders, creating a PDF, and sending it via email.
+ */
+function sendInvoiceViaEmailAccepted(sheet, editedRow, lcName, fullName, email, alamat, phoneNumber, universitas, namaAkun, namaBank, nomorRekening, price, proofPaymentLink, paymentGuidelineLink, customerExperienceNames, contactNumbers, emailCustomerExperience, invoiceTemplate) {
+  try {
+    var templateFileId = invoiceTemplate;
+    var destinationFolderId = 'Input ID Google Sheet File';
+
+    var templateFile = DriveApp.getFileById(templateFileId);
+    var destinationFolder = DriveApp.getFolderById(destinationFolderId);
+    var lcFolder = getFolderByNameOrCreateAccepted(destinationFolder, lcName);
+
+    var currentDate = getIndonesianFormattedDate(new Date());
+    var fileName = `${lcName}_${fullName}_${currentDate}`;
+    var documentCopy = templateFile.makeCopy(fileName, lcFolder);
+    var document = DocumentApp.openById(documentCopy.getId());
+    var body = document.getBody();
+    body.replaceText('{{Nama Lengkap}}', fullName);
+    body.replaceText('{{Alamat}}', alamat);
+    body.replaceText('{{No Tlp}}', phoneNumber);
+    body.replaceText('{{Email Address}}', email);
+    body.replaceText('{{LCName}}', lcName);
+    body.replaceText('{{Universitas}}', universitas);
+    body.replaceText('{{Program}}', "AIESEC Future Leaders by " + lcName);
+    body.replaceText('{{Price}}', price);
+    body.replaceText('{{INVOICE_DATE}}', currentDate);
+
+    var dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 2);
+    var formattedDue Date = getIndonesianFormattedDate(dueDate);
+    body.replaceText('{{DUE_DATE}}', formattedDueDate);
+
+    document.saveAndClose();
+
+    var pdfBlob = DriveApp.getFileById(documentCopy.getId()).getAs('application/pdf');
+    var pdfFileName = fileName + '.pdf';
+    lcFolder.createFile(pdfBlob).setName(pdfFileName);
+
+    var ccAddress = getCCAddress(emailCustomerExperience);
+
+    sendEmailWithHTMLBodyAccepted(email, 'Congratulations, You Passed The Interview Phase!', getEmailBodyFromHTMLTemplate(fullName, lcName, customerExperienceNames, contactNumbers, proofPaymentLink, paymentGuidelineLink), [pdfBlob], ccAddress);
+
+    Logger.log("Invoice and email sent successfully!");
+  } catch (error) {
+    Logger.log("Error in sendInvoiceViaEmailAccepted: " + error.toString());
+  }
+}
+
+/**
+ * Sends an email with an HTML body. It allows the inclusion of attachments and CC addresses.
+ */
+function sendEmailWithHTMLBodyAccepted(to, subject, htmlBody, attachments, ccAddress) {
+  MailApp.sendEmail({
+    to: to,
+    subject: subject,
+    htmlBody: htmlBody,
+    attachments: attachments,
+    cc: ccAddress,
+  });
+}
+
+/**
+ * Function to create a folder with a given name or retrieve the existing one.
+ * If the folder exists, it returns the existing folder; otherwise, it creates a new one under the specified parent folder.
+ */
+function getFolderByNameOrCreateAccepted(parentFolder, folderName) {
+  var folders = parentFolder.getFoldersByName(folderName);
+  if (folders.hasNext()) {
+    return folders.next();
+  } else {
+    return parentFolder.createFolder(folderName);
+  }
+}
+
+/**
+ * Generates an HTML email body for successful candidates with dynamic values.
+ * This function returns a styled HTML string with placeholders replaced with actual values, like full name, lcName, and payment links.
+ */
+function getEmailBodyFromHTMLTemplate(fullName, lcName, customerExperienceNames, contactNumbers, proofPaymentLink, paymentGuidelineLink) {
+  var body = `
+  <html>
+    <head>
+      <style>
+        body {
+          font-family: 'Lato', sans-serif;
+          font-size: 14px;
+          color: #000; /* Default font color is black */
+        }
+        .greeting, .thankyou {
+          font-size: 22px;
+          font-weight: bold;
+          color: #F29702;
+        }
+        .greeting1, .thankyou {
+          font-size: 16px;
+          font-weight: bold;
+          color: #F29702;
+        }
+        .thankyou {
+          font-style: italic;
+          font-size: 14px;
+        }
+        .contactPerson {
+          font-size: 14px;
+          font-weight: bold;
+        }
+        .congrats {
+          font-size: 14px;
+          font-weight: bold;
+        }
+        .link {
+          font-weight: bold;
+          color: #037EF3;
+          text-decoration: none;
+        }
+        .signature {
+          text-align: right;
+          font-weight: bold;
+          font-style: italic;
+        }
+        .copyright {
+          text-align: center;
+          font-size: 12px;
+          color: #000; /* Default font color is black */
+        }
+      </style>
+    </head>
+    <body>
+      <p class="greeting">Dear ${fullName}</p>
+      <p class="thankyou">Thank you for attending the interview in AIESEC Future Leaders by ${lcName}!</p>
+      <p>Our team has reviewed your application and considered your interview result; therefore, with great pleasure, we announce that you have <span class="greeting1">Passed the Selection! </span></p>
+      <p>Congratulations, you’re now a step further to be part of AIESEC Future Leaders by ${lcName}</p>
+      <p>In order to be an official participant, the next step will be <span class="greeting1">Payment! </span> </p>
+      <p>For the payment guidelines, please access this link: <a href="${paymentGuidelineLink}" class="link">Link Payment Guideline</a></p>
+      <p>Please provide proof of your payment and submit in this link: <a href="${proofPaymentLink}" class="link">Submit Payment Proof Here</a></p>
+      <p style="font-weight:bold"> Your invoice is attached in this email</p>
+      <p>If you have any questions or concerns, feel free to contact the organizing committee:</p>
+      <p class="contactPerson">${customerExperienceNames} : ${contactNumbers}</p>
+      <p>We look forward to you becoming our official participant of AIESEC Future Leaders</p>
+      <p class="signature">Sincerely<br>AFL TEAM</p>
+      <p class="copyright">Copyright © 2024 AIESEC in Indonesia, All rights reserved.<br>Our mailing address is: aiesecindonesia@gmail.com<br>Kantorkuu Coworking & Office Space, Citywalk Sudirman 2nd Level, KH. Mas Mansyur St. No. 121, Karet Tengsin, Tanah Abang, Central Jakarta, Indonesia 10220</p>
+    </body>
+  </html>
+  `;
+  return body;
+}
+
+/**
+ * Function to get CC address based on CC emails.
+ * It processes an array of email addresses into a comma-separated string suitable for email CC fields.
+ */
+function getCCAddress(ccAddress) {
+  return ccAddress.join(","); // Join CC emails into a comma-separated string
+}
+
+/**
+ * Function to get Indonesian-formatted date.
+ * Converts a JavaScript Date object into a string formatted according to Indonesian date conventions.
+ */
+function getIndonesianFormattedDate(date) {
+  var monthNames = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+  ];
+
+  var day = Utilities.formatDate(date, "GMT+7", "dd");
+  var monthIndex = date.getMonth();
+  var year = Utilities.formatDate(date, "GMT+7", "yyyy");
+
+  return day + " " + monthNames[monthIndex] + " " + year;
+}
