@@ -1,0 +1,124 @@
+/**
+ * Triggered when an edit indicating "REJECTED" is made to a specific row in the sheet. 
+ * Checks for edits in rows greater than or equal to 4 and specifically looks for changes in the "status" column to "REJECTED".
+ */
+function onEditRejected() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var editedRange = sheet.getActiveRange();
+    var editedRow = editedRange.getRow();
+
+    // Ensure the edited row is below a certain threshold and check the status
+    if (editedRow >= 4) {
+      var status = sheet.getRange(editedRow, 5).getValue();
+      if (status === "REJECTED") {
+        processEditedRowRejected(sheet, editedRow);
+      } else {
+        Logger.log("Status is not REJECTED. Skipping processing.");
+      }
+    }
+  } catch (error) {
+    Logger.log("Error in onEditRejected: " + error.toString());
+  }
+}
+
+/**
+ * Processes the data of the row marked as "REJECTED" by gathering necessary data and invoking a display function 
+ * to handle further data extraction and action.
+ */
+function processEditedRowRejected(sheet, editedRow) {
+  try {
+    var lcName = sheet.getRange(editedRow, 10).getValue();
+    var fullName = sheet.getRange(editedRow, 3).getValue();
+    var email = sheet.getRange(editedRow, 2).getValue();
+    var alamat = sheet.getRange(editedRow, 12).getValue();
+    var phoneNumber = sheet.getRange(editedRow, 15).getValue();
+    var universitas = sheet.getRange(editedRow, 8).getValue();
+    var emailStatus = sheet.getRange(editedRow, 6).getValue();
+
+    displayDataFromSecondSheetRejected(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus);
+  } catch (error) {
+    Logger.log("Error in processEditedRowRejected: " + error.toString());
+  }
+}
+
+/**
+ * Retrieves additional details from a secondary sheet named "1. CX Data" based on the local committee name (lcName).
+ * This function fetches customer contact and other relevant data to facilitate further actions, like sending rejection emails.
+ */
+function displayDataFromSecondSheetRejected(sheet, lcName, editedRow, fullName, email, alamat, phoneNumber, universitas, emailStatus) {
+  try {
+    var spreadsheetId = "1Jj9VuzUg-clAVzLo8b5-Xa0bu3QgnMsgcYzBFXyR_Rw";
+    var sheetName = "1. CX Data";
+    var invoiceSheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName);
+
+    var lcNames = invoiceSheet.getRange(4, 2, invoiceSheet.getLastRow() - 3, 1).getValues().flat();
+    var lcIndex = lcNames.indexOf(lcName);
+    if (lcIndex !== -1) {
+      var rowIndex = lcIndex + 4;
+      var customerExperienceNames = invoiceSheet.getRange(rowIndex, 3, 2, 1).getValues().flat();
+      var contactNumbers = invoiceSheet.getRange(rowIndex, 6, 2, 1).getValues().flat();
+      var emailCustomerExperience = invoiceSheet.getRange(rowIndex, 4, 2, 1).getValues().flat();
+
+      sendRejectionEmail(fullName, email, lcName, customerExperienceNames, contactNumbers, emailCustomerExperience);
+
+      var timeSent = new Date();
+      var note = "at " + Utilities.formatDate(timeSent, "GMT+7", "yyyy-MM-dd HH:mm:ss");
+      sheet.getRange(editedRow, 6).setValue("Rejection Mail Already Sent - " + note);
+
+      var cell = sheet.getRange(editedRow, 6);
+      cell.setBackground("#b10202");
+      cell.setFontColor("#ffcfc9");
+      cell.setFontWeight("bold");
+    }
+  } catch (error) {
+    Logger.log("Error in displayDataFromSecondSheetRejected: " + error.toString());
+  }
+}
+
+/**
+ * Sends a rejection email to the applicant with a detailed message, encouraging future participation and providing social media links.
+ * This function formats an HTML email, specifying the cc and bcc fields, and sends it to the rejected applicant.
+ */
+function sendRejectionEmail(fullName, email, lcName, customerExperienceNames, contactNumbers, emailCustomerExperience) {
+  try {
+    var ccAddress = emailCustomerExperience.join(","); // Prepare CC addresses
+
+    var emailBody = `
+      <html>
+        <head>
+          <style>
+            body { font-family: 'Lato', sans-serif; font-size: 14px; color: #000; }
+            .greeting, .thankyou { font-size: 22px; font-weight: bold; color: #F29702; }
+            .greeting1 { font-size: 16px; font-weight: bold; color: #F29702; }
+            .signature { text-align: right; font-weight: bold; font-style: italic; }
+            .contactPerson { font-size: 14px; font-weight: bold; }
+            .link { font-weight: bold; color: #037EF3; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          <p class="greeting">Dear ${fullName},</p>
+          <p class="thankyou">Thank you for your application in AIESEC Future Leaders by ${lcName}!</p>
+          <p>We regret to inform you that you have not been selected. We encourage you to stay engaged and look forward to future opportunities.</p>
+          <p>Follow us on social media for updates on upcoming programs:</p>
+          <p>Instagram: <a href="https://www.instagram.com/aiesecindonesia" class="link">@aiesecindonesia</a><br>
+             TikTok: <a href="https://www.tiktok.com/@aiesecindonesia" class="link">@aiesecindonesia</a><br>
+             Website: <a href="https://aiesec.or.id/" class="link">aiesec.or.id</a></p>
+          <p class="signature">Sincerely,<br>AFL TEAM</p>
+        </body>
+      </html>
+    `;
+
+    MailApp.sendEmail({
+      to: email,
+      subject: "Thank you for your application in AIESEC Future Leaders",
+      htmlBody: emailBody,
+      cc: ccAddress,
+      bcc: "gideonmanurung03@students.usu.ac.id"
+    });
+
+    Logger.log("Rejection email sent to: " + email);
+  } catch (error) {
+    Logger.log("Error in sendRejectionEmail: " + error.toString());
+  }
+}
